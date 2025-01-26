@@ -1,0 +1,274 @@
+---
+title: "08_A1_Task1"
+author: "Group 08 - Jason Abi Chebli (31444059), Sovathanak Measn (), Neev Bhandari (), Farrel Wiharso ()"
+date: "2023-09-18"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, eval = TRUE, warning = FALSE,
+message = FALSE, error = FALSE, tidy.opts = list(width.cutoff = 60),
+tidy = TRUE)
+```
+
+```{r load-in}
+library(formatR)
+library(tidyverse)
+library(kableExtra)
+library(broom)
+library(MASS)
+
+GradesData <- read.csv("GradesData.csv")
+```
+
+## Questions about Task 1
+- "The lecturer wants to examine “genuine” (non-zero) attempts only"... non zero attempts as in, total, or non-zero attempts for each question? Total makes sense to me... each question does not.
+- For our plot, should we do a density plot or just a usual histogram plot?? 
+- For the beta distribution, how are we meant to know which alpha and beta to use? just trial and error or is there a formula?? 
+
+
+## Task 1 - Fit a Distribution
+
+### Tidying the Data
+```{r tidy-data}
+# Modify the data to ensure that only genuine (non zero) attempts are analysed. 
+TidyGradesData <- GradesData |> 
+    filter(Total != 0)
+```
+The class has a total of `r nrow(GradesData)` students. Out of those `r nrow(GradesData)` students, only `r nrow(TidyGradesData)` gave the class quiz a genuine attempt, meaning that `r nrow(GradesData) - nrow(TidyGradesData)` students did not attempt the class quiz. These students results have been omitted to avoid it from influencing our analysis.
+
+### Should we use a Normal Distribution?
+The distribution of the genuine attemtps of the Management I class quiz can be seen in Figure 1.
+```{r normal-distribution-grades}
+TidyGradesData |> 
+    ggplot(aes(Total))  +
+  geom_histogram(colour="blue", fill="blue", alpha=0.5, bins=30)  +
+  labs(x = "Total Score (out of 1)", y = "Number of Students") + 
+  ggtitle("Figure 1: Distribution of the Genuine Attempts of the Class Quiz") + 
+    theme_bw()
+
+TidyGradesData |> 
+    ggplot(aes(x = Total, y = after_stat(density)))  +
+  geom_histogram(colour="blue", fill="blue", alpha=0.5, bins=30)  +
+      geom_density(colour="blue", fill="blue", alpha=0.2) +
+  labs(x = "Total Score (out of 1)", y = "Density") + 
+  ggtitle("Figure 1: Distribution of the Genuine Attempts of the Class Quiz") + 
+    theme_bw()
+
+```
+A normal distribution fits the data best if the distribution is symmetric. As can be seen in Figure 1, the data does not seem symmetrically distributed, with more data on the left side, indicating a longer left tail (also known as negatively skewed). As the data is negatively skewed and not symmetric, it is not the best idea in this instance to use a normal distribution. 
+
+## Should we use a Beta Distribution ? 
+As the data is negatively skewed, a beta distribution may be a valid alternative in this case, as a beta distribution covers a wide range of shapes, depending on the values of α and β. It can indeed take into account the negative skewness in its parameters and, therefore, be a more appropriate fit.  
+
+## Normal vs Beta Distribution
+
+```{r normal-distribution}
+# Normal Distribution
+
+set.seed(2023)
+
+x<-TidyGradesData$Total
+n <-nrow(TidyGradesData)
+df <- tibble(id = 1:n, x = x)
+
+normal_fit <- fitdistr(df$x, "normal") 
+normal_params <- normal_fit$estimate
+mu_tilde <- normal_params[1]
+sigma_tilde <- normal_params[2]
+
+normal_MLE.x <- normal_fit$estimate # point estimate 
+boot.seq <- seq(1,n,1)/n-1/(2*n)
+B <- 500
+normal_MLE.x_boot <- matrix(rep(NA,2*B), nrow=B, ncol=2)
+
+
+p <- ggplot(df, aes(sample = x)) +
+  stat_qq(distribution = qnorm, dparams = normal_params) +
+  stat_qq_line(distribution = qnorm, 
+               dparams = normal_params, color = "black") +
+  theme(aspect.ratio = 1) + theme_bw() +
+  xlab("Theoretical") + ylab("Sample")
+
+for(i in 1:B){
+  temp <- sample(df$x, size=n, replace=TRUE)
+  df <- df %>% mutate(temp=temp)
+  normal_MLE.x_boot[i,] <- fitdistr(temp, "normal")$estimate
+  normal_params_boot <- normal_MLE.x_boot[i,]
+  p <- p + stat_qq(aes(sample=temp), distribution = qnorm,
+                   dparams = normal_params_boot, colour="grey",
+                   alpha=0.2)
+}
+p <- p + stat_qq(aes(sample=x), distribution = qnorm,
+                 dparams = normal_params) + 
+  ggtitle("Figure 2: QQ plot with B=500 Bootstrap replicates for a Normal Distribution Fit")
+p
+
+# Calculate the BS CIs
+normal_boot.LCI.mu <- quantile(normal_MLE.x_boot[,1], c(0.025, 0.975))
+normal_boot.LCI.sig <- quantile(normal_MLE.x_boot[,2], c(0.025, 0.975))
+```
+
+```{r beta-distribution}
+# Beta Distribution
+
+set.seed(2023)
+
+x<-TidyGradesData$Total
+n <-nrow(TidyGradesData)
+df <- tibble(id = 1:n, x = x)
+
+beta_dist_fit <- fitdistr(df$x,"beta",start=list(shape1=1,shape2=1))
+beta_params <- beta_dist_fit$estimate
+alpha_tilde <- beta_params[1]
+beta_tilde <- beta_params[2]
+
+beta_MLE.x <- beta_dist_fit$estimate # point estimate 
+boot.seq <- seq(1,n,1)/n-1/(2*n)
+B <- 500
+beta_MLE.x_boot <- matrix(rep(NA,2*B), nrow=B, ncol=2)
+
+
+p <- ggplot(df, aes(sample = x)) +
+  stat_qq(distribution = qbeta, dparams = beta_params) +
+  stat_qq_line(distribution = qbeta, 
+               dparams = beta_params, color = "black") +
+  theme(aspect.ratio = 1) + theme_bw() +
+  xlab("Theoretical") + ylab("Sample")
+
+for(i in 1:B){
+  temp <- sample(df$x, size=n, replace=TRUE)
+  df <- df %>% mutate(temp=temp)
+  beta_MLE.x_boot[i,] <- fitdistr(temp, "beta",start = list(shape1 = alpha_tilde, shape2 = beta_tilde))$estimate
+  beta_params_boot <- beta_MLE.x_boot[i,]
+  p <- p + stat_qq(aes(sample=temp), distribution = qbeta,
+                   dparams = beta_params_boot, colour="grey",
+                   alpha=0.2)
+}
+p <- p + stat_qq(aes(sample=x), distribution = qbeta,
+                 dparams = beta_params) + 
+  ggtitle("Figure 3: QQ plot with B=500 Bootstrap replicates for a Beta Distribution Fit")
+p
+# Calculate the BS CIs
+beta_boot.LCI.alpha<-quantile(beta_MLE.x_boot[,1],c(0.025,0.975))
+beta_boot.LCI.beta<-quantile(beta_MLE.x_boot[,2],c(0.025,0.975))
+```
+Fitting a normal distribution to the data, we were able to determine the MLE estimates for the parameters, $(\hat{\mu},\hat{\sigma})$, given that there are two population parameters. As such, $\theta = \begin{pmatrix}\mu\\\sigma\end{pmatrix},\quad\hat{\theta}_{MLE} = \begin{pmatrix} \hat{\mu}\\ \hat{\sigma} \end{pmatrix}=\begin{pmatrix} 0.693\\ 0.148 \end{pmatrix}$ 
+The 95% Bootstrap Confidence Interval's for $\mu$ are `r normal_boot.LCI.mu[1]` and `r normal_boot.LCI.mu[2]`. 
+The 95% Bootstrap Confidence Interval's for $\sigma$ are `r normal_boot.LCI.sig[1]` and `r normal_boot.LCI.sig[2]`. 
+
+Fitting a beta distribution to the data, we were able to determine the MLE estimates for the parameters, $(\hat{\alpha}, \hat{\beta})$, given that there are two population parameters. As such, $\theta = \begin{pmatrix} \alpha\\ \beta \end{pmatrix},\quad \hat{\theta}_{MLE}=\begin{pmatrix} \hat{\alpha}\\ \hat{\beta} \end{pmatrix}=\begin{pmatrix} 5.95\\ 2.63 \end{pmatrix}$
+The 95% Bootstrap Confidence Interval's for $\alpha$ are `r beta_boot.LCI.alpha[1]` and `r normal_boot.LCI.alpha[2]`. 
+The 95% Bootstrap Confidence Interval's for $\beta$ are `r beta_boot.LCI.beta[1]` and `r normal_boot.LCI.beta[2]`. 
+
+
+From the QQPlots, we would recommend a beta distribution as it is a better fit. To come to this conclusion, a ‘thick-marker’ judgment approach was used. A distribution is a good fit if all of the values line on the 45 degree line. Furthermore, we can use a 'thick-marker' to draw over the line and most if not all the points should be covered. As can be seen, if we applied a thick marker line to Figure 2, we may have some points not covered at the top and maybe at the bottom. Meanwhile, if we applied a thick marker line approach to Figure 3, there may be less points covered at the bottom. This indicates that Figure 3 illustrates a better fit, and hence, a beta distribution would be recommended over a normal distribution.
+
+## Mean and Median of the Grade Distribution
+```{r mean-median-grade-distribution}
+# Calculate the mean
+mean_value <- alpha_tilde / (alpha_tilde + beta_tilde)
+
+# Calculate the median using R's built-in qbeta function
+median_value <- qbeta(0.5, shape1 = alpha_tilde, shape2 = beta_tilde)
+```
+
+Using a beta distribution fit, we estimate the population mean to be `r mean_value` and the population median to be `r median_value`. 
+We can interpret these numbers as the following. The average score on the quiz is `r mean_value`. Meanwhile, 50% of students got a score about `r median_value` and 50% of students got a score below `r median_value` on the quiz. 
+
+## Plot and interpret a 99% parametric bootstrap
+
+```{r bootplot}
+# Define functions at the start - so you will have it when you need it
+
+########### the bootplot.f function ############
+
+## This function "bootplot.f" takes a vector of Bootstrap samples as the main argument 
+## ('stat_boot'), and produces a plot showing the histogram, with smooth density estimate 
+##overlay,and also provides a option (detail) for the number of *bins* used in the 
+##histogram. You will need to run through the function code once to save it as an object 
+##before you can use the function. 
+
+bootplot.f<- function(stat.boot, bins=50, ci = 0.95){
+  
+  df <- tibble(stat = stat.boot)
+  CI <- round(quantile(stat.boot, c((1-ci)/2, ci+(1-ci)/2)),2)
+    p <- df %>% ggplot(aes(x=stat, y=after_stat(density))) +  
+    geom_histogram(bins=bins, colour="cornflowerblue", fill="cornflowerblue", alpha=0.2) + 
+    geom_density(fill="magenta", colour="magenta", alpha=0.2) +
+    geom_vline(xintercept = CI, colour = "magenta", linetype=5) +
+    geom_text(aes(x = CI[1], y = 0.2, label = paste("Lower CI:", CI[1])),
+              color = "black", size = 3, hjust = 0, nudge_x = 0.02) +
+    geom_text(aes(x = CI[2], y = 0.2, label = paste("Upper CI:", CI[2])),
+              color = "black", size = 3, hjust = 1, nudge_x = -0.02) +
+    theme_bw()
+  
+  p
+}
+
+######## end of bootplot.f function #######
+```
+
+
+```{r param_bs_meanGrade}
+
+set.seed(2023)
+B <- 5000
+betadist_MLE.x_boot <- matrix(rep(NA,2*B), nrow=B, ncol=2)
+
+x <- TidyGradesData$Total #re-define so we can cut and paste code
+n <- nrow(TidyGradesData)
+dt <- tibble(id = 1:n, x = x)
+
+for(i in 1:B){
+  temp <- sample(dt$x, size=n, replace=TRUE)
+  betadist_MLE.x_boot[i,] <- fitdistr(temp, "beta", start = list(shape1 = alpha_tilde, shape2 = beta_tilde))$estimate
+}
+
+betadist_boot.LCI.mu<-quantile(betadist_MLE.x_boot[,1],c(0.005,0.995))
+
+betadist_p_MLEboot.meanGrades <- bootplot.f(betadist_MLE.x_boot[, 1], bins = 40,.99)  +
+  ggtitle("Figure 4: Sampling distribution for MLE of the mean for a beta distribution") +
+  xlab("MLE of mean") +
+  theme(title = element_text(size = 8))
+
+betadist_p_MLEboot.meanGrades
+```
+We are 99% confident that the parametric bootstrap of the mean for the beta distribution lies between `r betadist_boot.LCI.mu[1]` and `r betadist_boot.LCI.mu[2]`. From Figure 4, the lecturers goal of the average quiz mark being 7 lies within this range and so it is possible. However, it is important to note that the mean of the average quiz mark is just below 6 (around 5.8), and the lecturer's goal is on the higher end, meaning that the average quiz mark of a 7 occurs less frequently.  
+
+
+### Average, Proportion Failed, Proportion of HDs
+```{r prop_calcs}
+# Calculate the mean
+average_grade <- alpha_tilde / (alpha_tilde + beta_tilde)
+
+lower_bound <- average_grade - 0.15 * average_grade
+upper_bound <- average_grade + 0.15 * average_grade
+
+# Calculate the proportion of students within the range
+proportion_within_range <- pbeta(upper_bound, shape1 = alpha_tilde, shape2 = beta_tilde) - pbeta(lower_bound, shape1 = alpha_tilde, shape2 = beta_tilde)
+
+
+proportion_failed <- pbeta(0.60, shape1 = alpha_tilde, shape2 = beta_tilde)
+proportion_hd <- 1 - pbeta(0.80, shape1 = alpha_tilde, shape2 = beta_tilde)
+```
+The average grade is `r average_grade*100`%. 
+
+The estimated proportion of students within 15% of this average is `r proportion_within_range`.
+
+Estimated number of students within 15% of the average: `r proportion_within_range*n`.
+
+The estimated proportion of students that would fail (a score below 60%) is `r proportion_failed`.
+
+Estimated number of students who failed: `r proportion_failed*n`.
+
+The estimated proportion of students that would get HD (a score above 80%) is `r proportion_hd`.
+
+Estimated number of students with HDs: `r proportion_hd*n`.
+
+
+###
+
+

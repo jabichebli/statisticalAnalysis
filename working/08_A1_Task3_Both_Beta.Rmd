@@ -1,0 +1,320 @@
+---
+title: "08_A1_Task3_Beta_Beta"
+author: "Group 08"
+date: "2023-09-18"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, eval = TRUE, warning = FALSE,
+message = FALSE, error = FALSE, tidy.opts = list(width.cutoff = 60),
+tidy = TRUE)
+```
+
+```{r load-in}
+library(formatR)
+library(tidyverse)
+library(kableExtra)
+library(broom)
+library(MASS)
+
+GradesData <- read.csv("GradesData.csv")
+```
+
+## Questions about Task 3
+- For the prior, do we just make it up and justify, or is there a concrete way to do this?? 
+
+
+## Task 1 - Fit a Distribution
+
+### Tidying the Data
+```{r tidy-data}
+# Modify the data to ensure that only genuine (non zero) attempts are analysed. 
+TidyGradesData <- GradesData |> 
+    filter(Total != 0)
+```
+## Task 2 - Are Post Grad Students better?
+
+#### New Variable to Data - Pass or Fail
+```{r pass-or-fail-variable}
+TidyGradesDataWithResults <- TidyGradesData |> 
+  mutate(Result = ifelse(Total >= 0.6, "PASS", "FAIL"))
+```
+
+#### Relevant Proportion Table
+```{r proportions-table}
+numResults <- TidyGradesDataWithResults |>
+    group_by(Cohort, Result) |>
+    summarize(Sum = n()) |>
+    pivot_wider(id_cols = Cohort,
+                names_from = Result,
+                values_from = Sum) |> 
+    mutate(TotalSum = FAIL + PASS)
+propResults <- numResults |> 
+    group_by(Cohort) |> 
+    mutate(prop_fail = FAIL/TotalSum, prop_pass = PASS/TotalSum)|> 
+    summarise(Cohort, prop_fail, prop_pass)
+```
+
+## Task 3 - Bayesian Analysis
+
+### Q1: Prior Distributions [2 marks]
+
+The proportion of undergraduate students and post graduate students that passed can be seen in Figure 8 and 9 respectively.
+
+```{r prior-distributions}
+TidyGradesDataWithResults |> 
+    filter(Result == "PASS", Cohort == "UG") |> 
+    ggplot(aes(x = Total, y = after_stat(density)))  +
+  geom_histogram(colour="blue", fill="blue", alpha=0.5, bins=15)  +
+      geom_density(colour="blue", fill="blue", alpha=0.2) +
+  labs(x = "Total Score (out of 1)", y = "Density") + 
+  ggtitle("Figure 8: Distribution of the Undergraduates that Passed") + 
+    theme_bw()
+
+TidyGradesDataWithResults |> 
+    filter(Result == "PASS", Cohort == "PG") |> 
+    ggplot(aes(x = Total, y = after_stat(density)))  +
+  geom_histogram(colour="blue", fill="blue", alpha=0.5, bins=15)  +
+      geom_density(colour="blue", fill="blue", alpha=0.2) +
+  labs(x = "Total Score (out of 1)", y = "Density") + 
+  ggtitle("Figure 9: Distribution of the Post graduate that Passed") + 
+    theme_bw()
+```
+
+Figure 8 illustrates the distribution for undergraduate students that "passed"  the quiz. As can be seen, the distribution seems to be a continuous bi-modal distribution. To an extent, it looks like similar to a continuous uniform distribution and as such, an appropriate prior distribution for the proportion of undergraduate students who "passed" could be a beta distribution as the beta distribution can take many shapes, including a skewed or somewhat uniform distribution. 
+
+
+Figure 9, on the other hand, illustrates the distribution for postgraduate students that "passed" the quiz. Similarly, it seems to also be a continuous bi-modal distribution. However, the distribution is not as uniform and could be argued to be slightly right skewed. Similarly, a beta distribution could also be used to fit the data, as beta distributions can take into account this skewness. As such, an appropriate prior distribution for the proportion of postgraduate students who “passed” could be a beta distribution.
+
+Please note that although both seem bi-modal, there is no distribution that can appropriately 100% fit a bi-modal model. As such, a uni-modal model must be chosen. 
+
+
+### Q2: Posterior Distributions [2 marks]
+
+To determine the posterior distributions for the proportion of undergraduate students who “passed” and one for the proportion of postgraduate students who “passed”, we will use the prior's conjugate pair.
+
+For the proportion of undergraduate students and postgraduate students that "passed", the prior distributon was a beta distribution. This means that the posterior can either be Bernoulli or binomial, as these are the only two conjugate pairs with beta. Bernoulli is a discrete distribution and Binomial is a continuous distribution. Therefore, given that the proportion is a continuous distribution, the posterior distribution for the proportion of undergraduate students who "passed" must be a binomial distribution. 
+
+In Summary, the appropriate prior-posterior distribution chosen are: 
+- Proportion of undergraduate students who "passed": Beta-Binomial
+- Proportion of postgraduate students who "passed": Beta-Binomial
+
+### Q3: 95% Credibility Intervals [4 marks]
+
+```{r beta-binomial}
+beta_binomial <- function(n, x, alpha = 1, beta = 1) {
+  atil <- alpha + x
+  btil <- beta + n - x
+  z <- n / (alpha + beta + n)
+  out <- list(alpha_tilde = atil, beta_tilde = btil, credibility_factor = z)
+  return(out)
+}
+```
+
+```{r credibility-intervals}
+alpha <- 1
+beta <- 1
+  
+n_PG <- numResults$TotalSum[numResults$Cohort == "PG"]
+x_PG <- numResults$PASS[numResults$Cohort == "PG"]
+  
+n_UG <- numResults$TotalSum[numResults$Cohort == "UG"]
+x_UG <- numResults$PASS[numResults$Cohort == "UG"]
+
+out_PG <- beta_binomial(n_PG, x_PG, alpha, beta)
+out_UG <- beta_binomial(n_UG, x_UG, alpha, beta)
+
+credible_interval_PG <- qbeta(c(0.025, 0.975), shape1 = out_PG$alpha_tilde, shape2 = out_PG$beta_tilde)
+credible_interval_UG <- qbeta(c(0.025, 0.975), shape1 = out_UG$alpha_tilde, shape2 = out_UG$beta_tilde)
+
+```
+
+There is a 95% probability that the true value of the mean of the post graduate students that passed lies within the interval [`r credible_interval_PG[1]`,`r credible_interval_PG[2]`], based on the data and our prior beliefs.
+
+There is a 95% probability that the true value of the mean of the post graduate students that passed lies within the interval [`r credible_interval_UG[1]`,`r credible_interval_UG[2]`], based on the data and our prior beliefs.
+
+As can be seen, for the post graduate students, the interval is larger than that for the undergraduate students. This indicates greater disparity and more uncertainty/variability with the post graduate students mean, than the undergraduate students mean.
+
+
+### Q5: The estimator that minimises the posterior expected squared error loss [8 marks]
+
+```{r squared-error-loss}
+# Determine the prior mean (note it should be the same for UG and PG given the same alpha and beta = 1)
+prior_mean_UG <- alpha / (alpha + beta) # Beta distribution
+prior_mean_PG <- alpha / (alpha + beta) # Beta distribution
+
+# Extract the credibility factor
+credibility_factor_UG <- out_UG$credibility_factor 
+credibility_factor_PG <- out_PG$credibility_factor
+
+# Yes, it is this in a form that linearly combines a purely data-based estimator and some prior quantity
+bayesian_estimate_PG <- credibility_factor_PG * (x_PG / n_PG) + (1 - credibility_factor_PG) * (prior_mean_PG)
+bayesian_estimate_UG <- credibility_factor_UG * (x_UG / n_UG) + (1 - credibility_factor_UG) * (prior_mean_UG)
+```
+
+The estimator is in a form that linearly combines a purely data-based estimator and some prior quantity.
+In fact, the form of the estimator for a beta binomial is:
+$$\hat{\mu} = Z\times(x/n)+ (1-Z)\times\mu_{prior} $$
+This form is true for both the undergraduate students and post graduate students as they are both a beta-binomial conjugate pair. 
+
+
+For the undergraduate cohort:
+
+Estimate ($\hat{\mu}_{UG}$) = `r bayesian_estimate_UG`
+
+Credibility Factor (Z) = `r credibility_factor_UG`
+
+For the post graduate cohort:
+
+Estimate ($\hat{\mu}_{PG}$) = `r bayesian_estimate_PG`
+
+Credibility Factor (Z) = `r credibility_factor_PG`
+
+
+As can be seen, the credibility factor for both of the cohorts is quite high (the maximum credibility factor value is 1). As such, this  implies that the prior distribution is heavily relied upon compared to the likelihood distribution. This is not the best outcome as we made an educated "guess" of the prior. Instead, we would prefer it if the credibility factor was lower, as it would indicate that our posterior distribution is not heavily influenced by our "guess" of the prior distribution.  
+
+The estimates that minimize the posterior expected squared error loss are `r bayesian_estimate_UG` and `r bayesian_estimate_PG` for the undergraduate and postgraduate cohort, respectively. These estimates are the mean for the respective cohorts that will result in the most appropriate fit and minimizes the expected squared error loss function: 
+$$L(\theta,\hat{\theta}) = (\theta- \hat{\theta})^2$$
+
+### Q6: The estimator that minimises the posterior expected absolute error loss [4 marks]
+
+The estimator that minimises the posterior expected absolute error loss for the proportion of
+students who “passed” for a given cohort is the median.
+
+```{r absolute-error-loss}
+
+# Calculate the posterior median for UG
+posterior_median_UG <- qbeta(0.5, out_UG$alpha_tilde, out_UG$beta_tilde)
+
+# Calculate the posterior median for PG
+posterior_median_PG <- qbeta(0.5, out_PG$alpha_tilde, out_PG$beta_tilde)
+```
+
+Hence,
+
+The estimate for for the undergraduate cohort: `r posterior_median_UG`
+
+The estimate for for the post graduate cohort: `r posterior_median_PG`
+
+The estimates that minimize the posterior expected absolute error loss are `r posterior_median_UG` and `r posterior_median_PG` for the undergraduate and postgraduate cohort, respectively. These estimates are the mean for the respective cohorts that will result in the most appropriate fit and minimizes the expected absolute error loss function: 
+$$L(\theta,\hat{\theta}) = |\theta- \hat{\theta}|$$
+
+### Q7: Visualise the posterior distribution [3 marks]
+
+```{r visualise-posterior}
+
+cbbPal <- c(black="#000000", orange="#E69F00", ltblue="#56B4E9", "#009E73",
+green="#009E73", yellow="#F0E442", blue="#0072B2", red="#D55E00",
+pink="#CC79A7")
+cbbP <- cbbPal[c("orange","blue","pink")] #choose colours for p
+
+x_values <- seq(0.001, 0.999, length.out = 100)
+postUG <- dbeta(x = x_values, out_UG$alpha_tilde, out_UG$beta_tilde)
+postPG <- dbeta(x = x_values, out_PG$alpha_tilde, out_PG$beta_tilde)
+
+df <- tibble(
+  Score = x_values,
+  `posterior pdf UG` = postUG,
+  `posterior pdf PG` = postPG
+)
+df_longer <- df %>%
+  pivot_longer(-Score, names_to = "distribution", values_to = "density")
+p1 <- df_longer %>%
+  ggplot(aes(
+    x = Score,
+    y = density,
+    colour = distribution,
+    fill = distribution
+  )) +
+  geom_line() +
+  scale_fill_manual(values = cbbP) +
+  theme_bw()+ 
+  labs(title = "Figure 10: Visulasation of Posterior Distribution")
+p1
+
+```
+As can be seen in Figure 10, the posterior mean is higher for the postgraduate students compared to that of the undergraduate students. This indicates that we expect post graduate students to perform better on average. Additionally, it is interesting to note the different densities of the two distributions. The undergraduate PDF distribution is more narrow and taller, potentially indicating that the performance of undergraduate students is more consistent, compared to that of post graduate students who have a shorter and slightly wider posterior pdf distribution. 
+
+### Q8: Which prior to use in future [2 marks]
+
+Even though our prior should (in theory) not have much of an influence on our data (given a large enough sample), it is still important to update our beliefs. Given that we now know the posterior distribution from this analysis, in the future, the prior distribution, should be the current posterior distribution. This means that for both cohorts, the prior should be a beta distribution $X \sim beta(\alpha,\beta)$.
+
+Specifically, 
+
+for the undergraduate cohort: $X \sim beta(103,44)$, and
+
+for the postgraduate cohort: $X \sim beta(42,8)$.
+
+### Q9: The posterior distribution of the difference in the proportion [4 marks]
+
+```{r visualise-diff-proportion}
+n_samples <- 1000
+
+posterior_samples_UG <- rbeta(n_samples, out_UG$alpha_tilde, out_UG$beta_tilde)
+posterior_samples_PG <- rbeta(n_samples, out_PG$alpha_tilde, out_PG$beta_tilde)
+
+posterior_diff_samples <- posterior_samples_PG - posterior_samples_UG
+
+# Create a data frame with posterior samples
+posterior_data <- data.frame(Difference = posterior_diff_samples)
+
+# Visualize the posterior distribution
+posterior_data %>%
+    ggplot(aes(x = Difference, y = after_stat(density))) +
+    geom_histogram(
+        colour = "blue",
+        fill = "blue",
+        alpha = 0.5,
+        bins = 20
+    ) +
+    geom_density(colour = "blue",
+                 fill = "blue",
+                 alpha = 0.2) +
+    labs(title = "Figure 11: Posterior Distribution of Difference in Proportions",
+         y = "Frequency") +
+    xlab(expression(paste(
+        "Difference in Proportions (", hat(p)[PG] - hat(p)[UG], ")"
+    ))) +
+    theme_bw()
+```
+Figure 11 shows that the posterior distribution of the difference in proportions is somewhat normally distributed (slightly negatively skewed). This distribution is not around 0.0, indicating that the average proportion of postgraduate students that passed is greater than the proportion of undergraduate students that passed, indicating that post graduate students perform better. ____________
+
+### Q10: The probability that the difference in the grades of the 2 cohorts is within 0.15 [4 marks]
+
+```{r}
+probability_within_range <- posterior_data %>%
+  summarize(
+    Probability = mean(abs(Difference) <= 0.15)
+  )
+
+posterior_data %>%
+    ggplot(aes(x = Difference, y = after_stat(density))) +
+    geom_histogram(
+        colour = "blue",
+        fill = "blue",
+        alpha = 0.5,
+        bins = 20
+    ) +
+    geom_density(colour = "blue",
+                 fill = "blue",
+                 alpha = 0.2) +
+    labs(title = "Figure 12: Posterior Distribution of Difference in Proportions",
+         y = "Frequency") +
+    xlab(expression(paste(
+        "Difference in Proportions (", hat(p)[PG] - hat(p)[UG], ")"
+    ))) +
+    geom_vline(xintercept = c(-0.15, 0.15), linetype = "dashed", color = "red") +
+    annotate("text", x = -0.13, y = -0.2, label = "-0.15", color = "red") +
+    annotate("text", x = 0.13, y =  -0.2, label = "0.15", color = "red") +
+    theme_bw()
+
+```
+
+The probability that the difference in the grades of the 2 cohorts is within 0.15 is `r probability_within_range`.
+As can be seen in Figure 12, This value makes sense as it looks like roughly half of the values lie within the -0.15 to 0.15 range. ____________
+
+
+
